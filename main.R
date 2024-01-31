@@ -15,6 +15,12 @@ library(stringr)
 library(FRAPO)
 library(zoo)
 
+################################################################################
+calculate_RMSE <- function(y,y_hat){
+  N <- length(y)
+  sqrt((1/N)*sum((y - y_hat)^2))}
+
+################################################################################
 # loading the dataset
 load("edx.Rdata")
 
@@ -47,7 +53,7 @@ ratio_above_range_average <- mean(
   mutate(above_range_average = rating > range_average) %>%
   pull(above_range_average))
 
-cat(glue("The average of the raiting range is {range_average}"))
+cat(glue("The average of the rating range is {range_average}"))
 cat(glue("About {round(ratio_above_range_average*100)}% of the ratings are above the range average"))
 
 # Visualize relationship between rating and frequency of rating for a movie
@@ -56,10 +62,7 @@ rating_vs_number <- edx %>%
   summarize(number_of_ratings = n(),
             average_rating = mean(rating))
 
-joint_plot <- rating_vs_ratingfreq %>% 
-  group_by(movieId) %>% 
-  summarize(number_of_ratings = n(),
-            average_rating = mean(rating)) %>%
+joint_plot <- rating_vs_number %>%
   ggplot(aes(x=number_of_ratings, y=average_rating)) + 
   geom_point(alpha=0.15) + scale_x_continuous(trans="log10")
 ggExtra::ggMarginal(p = joint_plot, type = "histogram")
@@ -71,13 +74,13 @@ cat(glue("correlation coefficient between average rating and number of ratings i
 edx <- merge(edx, rating_vs_number, by=c("movieId"))
 
 rm(rating_vs_number)
-# now let's look at the effect of genres on the rating. 
 
+# now let's look at the effect of genres on the rating. 
 cat(glue("There are {n_distinct(edx$genres)} distinct genres in the dataset"))
 
 my_genres <- c("Sci-Fi", "Drama")
 edx %>% mutate(genre_1 = ifelse(str_detect(genres,my_genres[1]), my_genres[1], glue("No {my_genres[1]}")),
-                         genre_2 = ifelse(str_detect(genres,my_genres[2]), my_genres[2], glue("No {my_genres[2]}"))) %>%
+               genre_2 = ifelse(str_detect(genres,my_genres[2]), my_genres[2], glue("No {my_genres[2]}"))) %>%
   select(average_rating, genre_1, genre_2) %>%
   distinct() %>% # keep unique rows only
   ggplot(aes(average_rating)) + geom_density() + facet_grid(genre_2~genre_1)
@@ -96,15 +99,38 @@ ggExtra::ggMarginal(p = my_plot, type = "histogram")
 # ratings. However, the distribution of average ratings per user seems to be normal
 
 
+# model building stuff
 test_indices <- createDataPartition(edx$rating, times=1, p=0.2, list=FALSE)
 
-test_set <- edx[test_indices]
-train_set <- edx[-test_indices]
+test_set <- edx[test_indices,]
+train_set <- edx[-test_indices,]
 
-fit_glm <- train(rating~movieId+userId+genres+number_of_ratings+average_rating, 
-                   data=edx_downsized, method="glm")
+# make sure movie and user ids are not new in test set
+test_set <- test_set %>% 
+  semi_join(train_set, by = "movieId") %>%
+  semi_join(train_set, by = "userId")
 
+mu <- mean(train_set$rating)
 
+movie_effect <- train_set %>% 
+  group_by(movieId) %>% 
+  summarize(b_i = mean(rating - mu))
+
+train_set <- merge(train_set, movie_effect, by=c("movieId"))
+
+user_effect <- train_set %>% 
+  group_by(userId) %>% 
+  summarize(b_u = mean(rating - mu - b_i))
+
+train_set <- merge(train_set, user_effect, by=c("userId"))
+
+predictions <- test_set %>% 
+  left_join(movie_effect, by='movieId') %>%
+  left_join(user_effect, by='userId') %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  pull(pred)
+
+calculate_RMSE(test_set$rating, predictions)
 
 
 
