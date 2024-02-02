@@ -1,3 +1,4 @@
 # ignor Rdata files
 *.Rdata
+*.Rhistory
 .Rproj.user
