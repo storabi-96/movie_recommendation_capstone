@@ -1,19 +1,89 @@
-# importing necessary libraries
+##########################################################
+# Create edx and final_holdout_test sets 
+##########################################################
+
+# Note: this process could take a couple of minutes
+
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
-if(!require(glue)) install.packages("glue", repos = "http://cran.us.r-project.org")
-if(!require(ggExtra)) install.packages("ggExtra", repos = "http://cran.us.r-project.org")
-if(!require(stringr)) install.packages("stringr", repos = "http://cran.us.r-project.org")
-if(!require(scales)) install.packages("stringr", repos = "http://cran.us.r-project.org")
 
 library(tidyverse)
 library(caret)
+
+# MovieLens 10M dataset:
+# https://grouplens.org/datasets/movielens/10m/
+# http://files.grouplens.org/datasets/movielens/ml-10m.zip
+
+options(timeout = 120)
+
+dl <- "ml-10M100K.zip"
+if(!file.exists(dl))
+  download.file("https://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+
+ratings_file <- "ml-10M100K/ratings.dat"
+if(!file.exists(ratings_file))
+  unzip(dl, ratings_file)
+
+movies_file <- "ml-10M100K/movies.dat"
+if(!file.exists(movies_file))
+  unzip(dl, movies_file)
+
+ratings <- as.data.frame(str_split(read_lines(ratings_file), fixed("::"), simplify = TRUE),
+                         stringsAsFactors = FALSE)
+colnames(ratings) <- c("userId", "movieId", "rating", "timestamp")
+ratings <- ratings %>%
+  mutate(userId = as.integer(userId),
+         movieId = as.integer(movieId),
+         rating = as.numeric(rating),
+         timestamp = as.integer(timestamp))
+
+movies <- as.data.frame(str_split(read_lines(movies_file), fixed("::"), simplify = TRUE),
+                        stringsAsFactors = FALSE)
+colnames(movies) <- c("movieId", "title", "genres")
+movies <- movies %>%
+  mutate(movieId = as.integer(movieId))
+
+movielens <- left_join(ratings, movies, by = "movieId")
+
+# Final hold-out test set will be 10% of MovieLens data
+set.seed(1, sample.kind="Rounding") # if using R 3.6 or later
+# set.seed(1) # if using R 3.5 or earlier
+test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
+edx <- movielens[-test_index,]
+temp <- movielens[test_index,]
+
+# Make sure userId and movieId in final hold-out test set are also in edx set
+final_holdout_test <- temp %>% 
+  semi_join(edx, by = "movieId") %>%
+  semi_join(edx, by = "userId")
+
+# Add rows removed from final hold-out test set back into edx set
+removed <- anti_join(temp, final_holdout_test)
+edx <- rbind(edx, removed)
+
+rm(dl, ratings, movies, test_index, temp, movielens, removed)
+
+save(edx, file = "edx.Rdata")
+save(final_holdout_test, file = "final_holdout_test.Rdata")
+
+################################################################################
+################################################################################
+################################################################################
+# importing necessary libraries
+if(!require(glue)) install.packages("glue", repos = "http://cran.us.r-project.org")
+if(!require(ggExtra)) install.packages("ggExtra", repos = "http://cran.us.r-project.org")
+if(!require(stringr)) install.packages("stringr", repos = "http://cran.us.r-project.org")
+if(!require(scales)) install.packages("scales", repos = "http://cran.us.r-project.org")
+
 library(glue)
 library(ggExtra)
 library(stringr)
 library(scales)
 
 ################################################################################
+################################################################################
+################################################################################
+# important functions
 calculate_RMSE <- function(y,y_hat){
   N <- length(y)
   sqrt((1/N)*sum((y - y_hat)^2))}
@@ -24,8 +94,9 @@ calculate_mean_rating_per_genre <- function(df, all_genres){
            pull(rating))})}
 
 ################################################################################
-# loading the dataset
-load("edx.Rdata")
+################################################################################
+################################################################################
+# start of the analysis
 
 # quickly see how the dataset looks like
 head(edx)
@@ -43,7 +114,6 @@ cat("number of movie ratings present in dataset: ", nrow(edx))
 cat("sparsity: ", sparsity)
 
 # EDA and visualization
-
 # Visualize relationship between rating and number of ratings for a movie
 
 rating_vs_number <- edx %>% 
@@ -63,15 +133,7 @@ ggExtra::ggMarginal(p = joint_plot_movie,
                     bins = 50,
                     color = "steelblue", fill="blue3")
 
-rating_vs_number_corr <- cor(
-  rating_vs_number$average_rating, 
-  rating_vs_number$number_of_ratings)
-
-cat(glue("correlation coefficient between average rating and number of ratings is {rating_vs_number_corr}"))
-
-# So it may makes sense to add number of ratings as a feature to our data set at
-# some if we need it. But we should do that after splitting the dataset to avoid
-# data leakage. But for further data visualization, we do it here and update it later
+# add rating number to edx for visualizations
 edx <- left_join(edx, rating_vs_number, by=c("movieId"))
 
 rm(rating_vs_number) # remove things we don't use from the environment
@@ -116,9 +178,7 @@ edx %>% mutate(genre_1 = ifelse(str_detect(genres,my_genres[1]),
   labs(x = "Average rating", 
        title ="Average movie rating vs genre combination")
 
-# there seems to be a genre dependency on rating. So we can use genre as a feature
-# now let's look at the effect of user on the rating
-
+# plot the effect of user on the rating
 joint_plot_user <- edx %>%
   group_by(userId) %>% 
   summarize(rating_num = n(),
@@ -133,11 +193,6 @@ ggExtra::ggMarginal(p = joint_plot_user,
                     type = "histogram", 
                     bins = 50,
                     color = "steelblue", fill="blue3")
-
-# There seems to be a user dependency, because different users have different average
-# ratings. And a big majority of users have rated very few movies. However, the 
-# distribution of average ratings per user seems to be normal
-
 
 # Extract year and month as possibly useful features
 edx$rating_year <- year(as_datetime(edx$timestamp))
@@ -179,13 +234,6 @@ edx %>%
        size = "Number ratings",
        title ="Average rating per month")
 
-
-# month effect seems to be minimal. It makes sense to not use it as a feature 
-# to avoid an over-fitting situation
-
-
-# for a careful eye, there is more information in the dataset. One can extract
-# the release year of the movies from the title
 # extract movie release year from the title
 edx <- edx %>% 
   mutate(release_year = as.numeric(sub(".*\\((\\d+)\\)", "\\1", title)))
@@ -263,7 +311,7 @@ predictions <- test_set %>%
   mutate(pred = mu) %>%
   pull(pred)
 
-calculate_RMSE(test_set$rating, predictions) # 1.060539
+calculate_RMSE(test_set$rating, predictions) 
 
 
 # use b_i to represent movie effect ==> rating = mu + b_i + randomness (model 1)
@@ -279,7 +327,7 @@ predictions <- test_set %>%
   mutate(pred = mu + b_i) %>%
   pull(pred)
 
-calculate_RMSE(test_set$rating, predictions) # 0.9434635
+calculate_RMSE(test_set$rating, predictions) 
 
 
 # use b_u to represent user effect ==> rating = mu + b_i + b_u + randomness (model 2)
@@ -297,7 +345,7 @@ predictions <- test_set %>%
   mutate(pred = mu + b_i + b_u) %>%
   pull(pred)
 
-calculate_RMSE(test_set$rating, predictions) # 0.8659932
+calculate_RMSE(test_set$rating, predictions) 
 
 # although we took into account the individual movie effect using b_i, however,
 # the movie effect might be due to several reasons (e.g. actors, producer, etc.)
@@ -318,7 +366,7 @@ predictions <- test_set %>%
   mutate(pred = mu + b_i + b_u + b_g) %>%
   pull(pred)
 
-calculate_RMSE(test_set$rating, predictions) # 0.8656635
+calculate_RMSE(test_set$rating, predictions) 
 
 
 # Adding the genre didn't help a lot, just a bit. Let's try the effect of year 
@@ -338,7 +386,7 @@ predictions <- test_set %>%
   mutate(pred = mu + b_i + b_u + b_g + b_yd) %>%
   pull(pred)
 
-calculate_RMSE(test_set$rating, predictions) # 0.8652424
+calculate_RMSE(test_set$rating, predictions) 
 
 
 # Let's also add the release year effect 
@@ -359,7 +407,7 @@ predictions <- test_set %>%
   mutate(pred = mu + b_i + b_u + b_g + b_yd + b_rl) %>%
   pull(pred)
 
-calculate_RMSE(test_set$rating, predictions) # 0.8650521
+calculate_RMSE(test_set$rating, predictions) 
 
 
 # Let's regularize all
@@ -375,11 +423,9 @@ calculate_RMSE(test_set$rating, predictions) # 0.8650521
 train_set <- train_set %>% select(-any_of(c("b_i", "b_u", "b_g", 
                                             "b_yd", "b_rl")))
 
-lambdas <- seq(0, 10, length=15)
+lambdas <- seq(0, 10)
 
 RMSEs <- sapply(lambdas, function(lambda){
-  
-  print(lambda)
   
   movie_effect <- train_set %>% 
     group_by(movieId) %>% 
@@ -433,26 +479,27 @@ plot(lambdas, RMSEs,
 
 lambdas[which(RMSEs==min(RMSEs))]
 
-min(RMSEs) # 0.8643476
+min(RMSEs) 
 
 ################################################################################
 ################################################################################
 
 lambda <- lambdas[which(RMSEs==min(RMSEs))]
 
-load("final_holdout_test.Rdata")
 
+# create release year for the final test set
 final_holdout_test <- final_holdout_test %>% 
   mutate(release_year = as.numeric(sub(".*\\((\\d+)\\)", "\\1", title)))
 
+# create raing year for the final test set
 final_holdout_test$rating_year <- year(
   as_datetime(final_holdout_test$timestamp))
 
+# create raing year for the year difference
 final_holdout_test <- final_holdout_test %>% 
   mutate(years_difference = rating_year - release_year)
 
 # Now we can use entire edx dataset to train the model for prediction on final test set
-
 movie_effect <- edx %>% 
   group_by(movieId) %>% 
   summarize(b_i = sum(rating - mu)/(lambda+n()))
