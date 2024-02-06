@@ -699,7 +699,7 @@ release_year_effect %>% ggplot(aes(b_rl)) + geom_histogram(color = "steelblue", 
 To further improve our RMSE, we need to regularize the effects used in iteration 5.
 
 
-## III.V. Iteration 6
+## III.VII. Iteration 6
 
 Iteration 6 takes into account the effect of factors in iteration 5 and follows the same formulation. However, the effect of factors are regularized. This means that we introduce a penalty factor $\lambda$, which is used to penalize the effect of factors when they are based on very limited numbers of observations. In other words, the effect of factors can shrink closer to zero in case their corresponding observations are very limited in number. Regularization does not have any significant effect when the effects are based on sufficient numbers of observations. 
 
@@ -789,7 +789,7 @@ table_iterations <- data.frame(
 kable(table_iterations, format = "markdown", col.names = c("Iteration", "Factors", "RMSE"))
 ```
 
-## III.VI. Testing the final model
+## III.VIII. Testing the final model
 
 ```{r final testing of the model, echo=FALSE, message=FALSE, warning=FALSE}
 
@@ -878,7 +878,7 @@ table_iterations <- data.frame(
 kable(table_iterations, format = "markdown", col.names = c("Iteration", "Factors", "RMSE"))
 ```
 
-## IIII. Conclusion
+## IV. Conclusion
 In this project, we analyzed the MovieLens data set and used it to develop the basis for a movie recommendation model. To do so, firstly, we performed EDA and different visualizations on the data set to learn about relationships and correlations that exist in the data. Then we adapted an iterative approach to improve the performance of the model at each step by taking into account the effect of different factors such as movie, genre, and release year. Once we included all factors that made sense based on our EDA, we regularized the effect of each factor after finding the optimal regularization penalty value $\lambda$ through a 1-D grid search. In the end, we used our best performing model and put it to test against the **final_holdout_test** set, and obtained an RMSE of `r RMES_iterations[8]`. This RMSE value can be further improved by performing matrix factorization through PCA or SVD and including the resulting influences into our model.
 
 
